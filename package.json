@@ -1,0 +1,24 @@
+{
+  "name": "node_tool",
+  "version": "1.0.0",
+  "description": "快速nodejs小工具",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "debugwatch":"tsc -w",
+    "build":"tsc -p ./tsconfig.build.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeefyang/node_tool.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jeefyang/node_tool/issues"
+  },
+  "homepage": "https://github.com/jeefyang/node_tool#readme",
+  "dependencies": {
+    "@types/node": "^18.15.1"
+  }
+}
