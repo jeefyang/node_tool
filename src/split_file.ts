@@ -104,7 +104,8 @@ let matchConfigFunc = (collectData: collectType[], baseDir?: string, childConfig
     if (!exMap) {
         exMap = [...childConfig.exMap || []]
     }
-    exMap.push(...childConfig.map?.map?.(c => c.toUpperCase()) || [])
+    let cacheMap = [...childConfig?.map || [], ...childConfig?.forceMap || []]
+    exMap.push(...cacheMap.map(c => c.toUpperCase()))
     if (!childConfig.children || childConfig.children.length == 0) {
         return { exMap, baseDir, childConfig }
     }
@@ -114,7 +115,8 @@ let matchConfigFunc = (collectData: collectType[], baseDir?: string, childConfig
             if (!collectData[j].isKey) {
                 continue
             }
-            let map = [...child.map]
+            let map = [...child?.map || []]
+            map.push(...child?.forceMap || [])
             map = map.map(c => c.toUpperCase())
             if (map.includes(collectData[j].attr.toUpperCase())) {
                 exMap.push(...child.exMap || [])
@@ -168,6 +170,53 @@ let getDirFunc = (collectData: collectType[], childConfig: configType_child, exM
     return dir
 }
 
+/** 整理文件夹大法 */
+let trimDirFunc = (childConfig?: configType_child, baseDir?: string) => {
+    if (!childConfig) {
+        childConfig = config
+    }
+    if (!baseDir) {
+        baseDir = outDir
+    }
+    if (childConfig.dir) {
+        baseDir = path.join(baseDir, childConfig.dir)
+    }
+    if (childConfig.sameMap) {
+        let nameList = fs.readdirSync(baseDir)
+        for (let i = 0; i < nameList.length; i++) {
+            let name = nameList[i]
+            for (let j = 0; j < childConfig.sameMap.length; j++) {
+                let sameMap = [...childConfig.sameMap[j].map(c => c.toUpperCase())]
+                if (sameMap.indexOf(name.toUpperCase()) > 0) {
+                    let targetDir = path.join(baseDir, childConfig.sameMap[j][0])
+                    fs.mkdirSync(targetDir, { "recursive": true })
+                    let oldDir = path.join(baseDir, name)
+                    let childNameList = fs.readdirSync(oldDir)
+                    console.log(`移动文件夹 ${oldDir} -> ${targetDir}`)
+                    for (let k = 0; k < childNameList.length; k++) {
+                        let fileUrl = path.join(oldDir, childNameList[k])
+                        if (fs.statSync(fileUrl).isFile()) {
+                            fs.renameSync(fileUrl, path.join(targetDir, childNameList[k]))
+                        }
+                    }
+                    console.log(`删除文件夹 ${oldDir}`)
+                    fs.rmdirSync(oldDir)
+
+                }
+            }
+
+        }
+    }
+
+    if (childConfig.children) {
+        for (let i = 0; i < childConfig.children.length; i++) {
+            trimDirFunc(childConfig.children[i], baseDir)
+        }
+    }
+
+}
+
+/** 主进程 */
 let mainFunc = (fileName: string) => {
     console.log(fileName)
     let collectData = splitFunc(fileName)
@@ -188,16 +237,19 @@ let mainFunc = (fileName: string) => {
     fs.mkdirSync(newDir, { "recursive": true })
     let url = path.join(newDir, fileName)
     fs.renameSync(path.join(targetDir, fileName), url)
-
 }
 
 (async () => {
+
+    // 先读取命令行的参数
     if (process.argv[2] && fs.existsSync(process.argv[2])) {
         let str = fs.readFileSync(process.argv[2], "utf-8")
         config = eval(`(${str})`)
         targetDir = config.targetDir || targetDir
         outDir = config.outDir || outDir
     }
+
+    // 询问修改目标搜索的文件夹
     await questionFunc(`是否修改目标搜索的文件夹,默认:"${targetDir}",`, (answer) => {
         if (!answer) {
             return false
@@ -210,6 +262,8 @@ let mainFunc = (fileName: string) => {
         return false
     })
     console.log(`目标搜索的文件夹:"${targetDir}"`)
+
+    //询问修改输出的文件夹
     await questionFunc(`是否修改输出的文件夹,默认:"${outDir}",`, (answer) => {
         if (!answer) {
             return false
@@ -222,6 +276,8 @@ let mainFunc = (fileName: string) => {
         return false
     })
     console.log(`输出的文件夹:"${outDir}"`)
+
+    //询问修改配置
     await questionFunc(`是否修改配置,请输入配置的路径,`, (answer) => {
         if (!answer) {
             return false
@@ -237,8 +293,8 @@ let mainFunc = (fileName: string) => {
         return false
     })
     console.log(config)
-    rl.close()
 
+    // 主进程
     let fileNameList = fs.readdirSync(targetDir)
     for (let i = 0; i < fileNameList.length; i++) {
         let fileName = fileNameList[i]
@@ -247,5 +303,20 @@ let mainFunc = (fileName: string) => {
         }
         mainFunc(fileName)
     }
+
+    // 询问整理文件夹
+    await questionFunc("是否整理文件夹?Y/N,默认Y,", (answer) => {
+        if (answer.toUpperCase() == "N") {
+            console.log("不整理!")
+            return false
+        }
+        trimDirFunc()
+
+        return false
+    })
+
+    // 关闭询问
+    rl.close()
+    console.log("打完收工!")
 })()
 
