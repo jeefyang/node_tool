@@ -35,9 +35,8 @@ let rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
 })
-
 /** 问问题大法 */
-let questionFunc = async (str: string, func: (answer: string) => boolean) => {
+async function askQuestion(str: string, func: (answer: string) => boolean) {
     return new Promise((res, rej) => {
         rl.question(str, (answer) => {
             let check = func(answer)
@@ -48,6 +47,28 @@ let questionFunc = async (str: string, func: (answer: string) => boolean) => {
         })
     })
 }
+
+/** 移动文件 */
+async function moveFile(fromUrl: string, toUrl: string) {
+    try {
+        fs.renameSync(fromUrl, toUrl)
+    }
+    // 一般是因为无法跨盘符
+    catch (e) {
+        let rs = fs.createReadStream(fromUrl)
+        let ws = fs.createWriteStream(toUrl)
+        rs.pipe(ws)
+        await new Promise((res, rej) => {
+            rs.on("end", () => {
+                fs.rmSync
+                fs.unlinkSync(fromUrl)
+                res(undefined)
+            })
+        })
+    }
+    return
+}
+
 
 type collectType = {
     isKey: boolean,
@@ -171,7 +192,7 @@ let getDirFunc = (collectData: collectType[], childConfig: configType_child, exM
 }
 
 /** 整理文件夹大法 */
-let trimDirFunc = (childConfig?: configType_child, baseDir?: string) => {
+let trimDirFunc = async (childConfig?: configType_child, baseDir?: string) => {
     if (!childConfig) {
         childConfig = config
     }
@@ -196,7 +217,8 @@ let trimDirFunc = (childConfig?: configType_child, baseDir?: string) => {
                     for (let k = 0; k < childNameList.length; k++) {
                         let fileUrl = path.join(oldDir, childNameList[k])
                         if (fs.statSync(fileUrl).isFile()) {
-                            fs.renameSync(fileUrl, path.join(targetDir, childNameList[k]))
+                            await moveFile(fileUrl, path.join(targetDir, childNameList[k]))
+                            // fs.renameSync(fileUrl, path.join(targetDir, childNameList[k]))
                         }
                     }
                     console.log(`删除文件夹 ${oldDir}`)
@@ -210,14 +232,15 @@ let trimDirFunc = (childConfig?: configType_child, baseDir?: string) => {
 
     if (childConfig.children) {
         for (let i = 0; i < childConfig.children.length; i++) {
-            trimDirFunc(childConfig.children[i], baseDir)
+            await trimDirFunc(childConfig.children[i], baseDir)
         }
     }
+    return
 
 }
 
 /** 主进程 */
-let mainFunc = (fileName: string) => {
+let mainFunc = async (fileName: string) => {
     console.log(fileName)
     let collectData = splitFunc(fileName)
     let data = matchConfigFunc(collectData)
@@ -236,7 +259,8 @@ let mainFunc = (fileName: string) => {
     console.log(newDir)
     fs.mkdirSync(newDir, { "recursive": true })
     let url = path.join(newDir, fileName)
-    fs.renameSync(path.join(targetDir, fileName), url)
+    // fs.renameSync(path.join(targetDir, fileName), url)
+    moveFile(path.join(targetDir, fileName), url)
 }
 
 (async () => {
@@ -250,7 +274,7 @@ let mainFunc = (fileName: string) => {
     }
 
     // 询问修改目标搜索的文件夹
-    await questionFunc(`是否修改目标搜索的文件夹,默认:"${targetDir}",`, (answer) => {
+    await askQuestion(`是否修改目标搜索的文件夹,默认:"${targetDir}",`, (answer) => {
         if (!answer) {
             return false
         }
@@ -264,7 +288,7 @@ let mainFunc = (fileName: string) => {
     console.log(`目标搜索的文件夹:"${targetDir}"`)
 
     //询问修改输出的文件夹
-    await questionFunc(`是否修改输出的文件夹,默认:"${outDir}",`, (answer) => {
+    await askQuestion(`是否修改输出的文件夹,默认:"${outDir}",`, (answer) => {
         if (!answer) {
             return false
         }
@@ -278,7 +302,7 @@ let mainFunc = (fileName: string) => {
     console.log(`输出的文件夹:"${outDir}"`)
 
     //询问修改配置
-    await questionFunc(`是否修改配置,请输入配置的路径,`, (answer) => {
+    await askQuestion(`是否修改配置,请输入配置的路径,`, (answer) => {
         if (!answer) {
             return false
         }
@@ -301,22 +325,25 @@ let mainFunc = (fileName: string) => {
         if (fs.statSync(path.join(targetDir, fileName)).isDirectory()) {
             continue
         }
-        mainFunc(fileName)
+        await mainFunc(fileName)
     }
 
+    let istrimDir = false
+
     // 询问整理文件夹
-    await questionFunc("是否整理文件夹?Y/N,默认Y,", (answer) => {
+    await askQuestion("是否整理文件夹?Y/N,默认Y,", (answer) => {
         if (answer.toUpperCase() == "N") {
             console.log("不整理!")
             return false
         }
-        trimDirFunc()
-
+        istrimDir = true
         return false
     })
-
     // 关闭询问
     rl.close()
+    if (istrimDir) {
+        await trimDirFunc()
+    }
     console.log("打完收工!")
 })()
 

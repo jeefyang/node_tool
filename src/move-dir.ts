@@ -22,7 +22,7 @@ let rl = readline.createInterface({
     output: process.stdout
 })
 /** 问问题大法 */
-let questionFunc = async (str: string, func: (answer: string) => boolean) => {
+async function askQuestion(str: string, func: (answer: string) => boolean) {
     return new Promise((res, rej) => {
         rl.question(str, (answer) => {
             let check = func(answer)
@@ -33,57 +33,84 @@ let questionFunc = async (str: string, func: (answer: string) => boolean) => {
         })
     })
 }
+
 /** 是否强制覆盖 */
 let isForceOver = false
 
-/** 循环大法 */
-let loopFunc = async (dir: string) => {
-    fs.mkdirSync(path.join(toDir, dir), { "recursive": true })
-    let fromDirUrl = path.join(fromDir, dir)
-    let fileNameList = fs.readdirSync(fromDirUrl)
-    for (let i = 0; i < fileNameList.length; i++) {
-        let fileName = fileNameList[i]
-        let fromUrl = path.join(fromDir, dir, fileName)
-        let toUrl = path.join(toDir, dir, fileName)
-        let stat = fs.statSync(fromUrl)
-        if (stat.isDirectory()) {
-            await loopFunc(path.join(dir, fileName))
-        }
-        else if (stat.isFile() && (isForceOver || !fs.existsSync(toUrl))) {
-            console.log(`正在移动文件 ${fromUrl} -> ${toUrl}`)
-            try {
-                fs.renameSync(fromUrl, toUrl)
-            }
-            // 一般是因为无法跨盘符
-            catch (e) {
-                let rs = fs.createReadStream(fromUrl)
-                let ws = fs.createWriteStream(toUrl)
-                rs.pipe(ws)
-                await new Promise((res, rej) => {
-                    rs.on("end", () => {
-                        fs.rmSync
-                        fs.unlinkSync(fromUrl)
-                        res(undefined)
-                    })
-                })
-            }
-        }
-        else {
-            console.log(`文件 ${toUrl} 已存在,跳过!`)
-        }
+
+
+/** 移动文件 */
+async function moveFile(fromUrl: string, toUrl: string) {
+    try {
+        fs.renameSync(fromUrl, toUrl)
     }
-    if (path.join(fromDir) != fromDirUrl && fs.readdirSync(fromDirUrl).length == 0) {
-        console.log(`删除从路径文件夹 ${fromDirUrl}`)
-        fs.rmdirSync(fromDirUrl)
-    }
-    else {
-        console.log(`从路径文件夹 ${fromDirUrl} 不为空,暂不删除`)
+    // 一般是因为无法跨盘符
+    catch (e) {
+        let rs = fs.createReadStream(fromUrl)
+        let ws = fs.createWriteStream(toUrl)
+        rs.pipe(ws)
+        await new Promise((res, rej) => {
+            rs.on("end", () => {
+                fs.rmSync
+                fs.unlinkSync(fromUrl)
+                res(undefined)
+            })
+        })
     }
     return
 }
+
+/** 移动文件夹 */
+async function moveDir(fromDir: string, toDir: string, op: {
+    /** 初始的时候不应该存在 */
+    currentDir?: string
+    moveBeforeCB?: (fromUrl: string, toUrl: string) => void
+    moveAfterCB?: (fromUrl: string, toUrl: string, isMove: boolean) => void
+    moveDirCB?: (fromDir: string) => void
+    /** 是否强制覆盖 */
+    isForeOver?: boolean
+}) {
+    if (!op.currentDir) {
+        op.currentDir = "./"
+    }
+    let currentFromDir = path.join(fromDir, op.currentDir)
+    fs.mkdirSync(currentFromDir, { "recursive": true })
+    let currentToDir = path.join(toDir, op.currentDir)
+    let filenameList = fs.readdirSync(currentFromDir)
+    for (let i = 0; i < filenameList.length; i++) {
+        let filename = filenameList[i]
+        let fromUrl = path.join(currentFromDir, filename)
+        let stat = fs.statSync(fromUrl)
+        if (stat.isDirectory()) {
+            let cloneOP = JSON.parse(JSON.stringify(op))
+            cloneOP.currentDir = path.join(op.currentDir, filename)
+            await moveDir(fromDir, toDir, cloneOP)
+            continue
+        }
+        let toUrl = path.join(currentToDir, filename)
+        if (op.moveBeforeCB) {
+            op.moveBeforeCB(fromUrl, toUrl)
+        }
+        let isMove = false
+        if (stat.isFile() && (op.isForeOver || !fs.existsSync(toUrl))) {
+            isMove = true
+            await moveFile(fromUrl, toUrl)
+        }
+        if (op.moveAfterCB) {
+            op.moveAfterCB(fromUrl, toUrl, isMove)
+        }
+    }
+    if (op.moveDirCB) {
+        op.moveDirCB(currentFromDir)
+    }
+    return
+}
+
+
+
 (async () => {
 
-    await questionFunc(`当前从文件夹为 ${fromDir},是否需要修改?\n`, (answer) => {
+    await askQuestion(`当前从文件夹为 ${fromDir},是否需要修改?\n`, (answer) => {
         if (!answer) {
             return false
         }
@@ -96,7 +123,7 @@ let loopFunc = async (dir: string) => {
     })
     console.log(`从文件夹路径为 ${fromDir}`)
 
-    await questionFunc(`当前到文件夹为 ${toDir},是否需要修改?\n`, (answer) => {
+    await askQuestion(`当前到文件夹为 ${toDir},是否需要修改?\n`, (answer) => {
         if (!answer) {
             return false
         }
@@ -108,7 +135,7 @@ let loopFunc = async (dir: string) => {
         return false
     })
     console.log(`到文件夹路径为 ${toDir}`)
-    await questionFunc(`是否强制覆盖,y/n?(默认n)?\n`, (answer) => {
+    await askQuestion(`是否强制覆盖,y/n?(默认n)?\n`, (answer) => {
         if (!answer) {
             return false
         }
@@ -134,6 +161,26 @@ let loopFunc = async (dir: string) => {
         console.log(`文件夹一致,不用移动!!!`)
         process.exit()
     }
-    await loopFunc("./")
+    await moveDir(fromDir, toDir, {
+        isForeOver: isForceOver,
+        moveBeforeCB: (fromUrl, toUrl) => {
+            console.log(`正在移动文件 ${fromUrl} -> ${toUrl}`)
+        },
+        moveAfterCB: (_fromUrl, toUrl, isMove) => {
+            if (isMove) {
+                console.log(`文件 ${toUrl} 已存在,跳过!`)
+            }
+        },
+        moveDirCB: (fromUrl) => {
+            // 非从文件夹且文件夹的文件数量等于0
+            if (path.join(fromDir) != fromUrl && fs.readdirSync(fromUrl).length == 0) {
+                console.log(`删除从路径文件夹 ${fromUrl}`)
+                fs.rmdirSync(fromUrl)
+            }
+            else {
+                console.log(`从路径文件夹 ${fromUrl} 不为空,暂不删除`)
+            }
+        },
+    })
     console.log("打完收工!")
 })()

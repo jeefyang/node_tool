@@ -21,12 +21,34 @@ if (!fs.statSync(targetDir).isDirectory()) {
     process.exit()
 }
 
-let loopFunc = (dir: string) => {
+/** 移动文件 */
+async function moveFile(fromUrl: string, toUrl: string) {
+    try {
+        fs.renameSync(fromUrl, toUrl)
+    }
+    // 一般是因为无法跨盘符
+    catch (e) {
+        let rs = fs.createReadStream(fromUrl)
+        let ws = fs.createWriteStream(toUrl)
+        rs.pipe(ws)
+        await new Promise((res, rej) => {
+            rs.on("end", () => {
+                fs.rmSync
+                fs.unlinkSync(fromUrl)
+                res(undefined)
+            })
+        })
+    }
+    return
+}
+
+
+let loopFunc = async (dir: string) => {
     let fileName = fs.readdirSync(path.join(targetDir, dir))
     for (let i = 0; i < fileName.length; i++) {
         let url = path.join(targetDir, dir, fileName[i])
         if (fs.statSync(url).isDirectory()) {
-            loopFunc(path.join(dir, fileName[i]))
+            await loopFunc(path.join(dir, fileName[i]))
             continue
         }
         let newUrl = path.join(outDir, fileName[i])
@@ -36,12 +58,17 @@ let loopFunc = (dir: string) => {
             let fixUrl = path.join(fixDir, fileName[i])
 
             console.log(`出现重名,即将: ${url} -> ${fixUrl}`)
-            fs.renameSync(url, fixUrl)
+            await moveFile(url, fixUrl)
+            // fs.renameSync(url, fixUrl)
             continue
         }
         console.log(`即将: ${url} -> ${newUrl}`)
-        fs.renameSync(url, newUrl)
+        await moveFile(url, newUrl)
+        // fs.renameSync(url, newUrl)
+        return
     }
 }
 
-loopFunc("./")
+loopFunc("./").then(() => {
+    console.log("打完收工")
+})
