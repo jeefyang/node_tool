@@ -74,8 +74,8 @@ async function moveDir(fromDir: string, toDir: string, op: {
         op.currentDir = "./"
     }
     let currentFromDir = path.join(fromDir, op.currentDir)
-    fs.mkdirSync(currentFromDir, { "recursive": true })
     let currentToDir = path.join(toDir, op.currentDir)
+    fs.mkdirSync(currentToDir, { "recursive": true })
     let filenameList = fs.readdirSync(currentFromDir)
     for (let i = 0; i < filenameList.length; i++) {
         let filename = filenameList[i]

@@ -69,6 +69,53 @@ async function moveFile(fromUrl: string, toUrl: string) {
     return
 }
 
+/** 移动文件夹 */
+async function moveDir(fromDir: string, toDir: string, op: {
+    /** 初始的时候不应该存在 */
+    currentDir?: string
+    moveBeforeCB?: (fromUrl: string, toUrl: string) => void
+    moveAfterCB?: (fromUrl: string, toUrl: string, isMove: boolean) => void
+    moveDirCB?: (fromDir: string) => void
+    /** 是否强制覆盖 */
+    isForeOver?: boolean
+}) {
+    if (!op.currentDir) {
+        op.currentDir = "./"
+    }
+    let currentFromDir = path.join(fromDir, op.currentDir)
+    let currentToDir = path.join(toDir, op.currentDir)
+    fs.mkdirSync(currentToDir, { "recursive": true })
+    let filenameList = fs.readdirSync(currentFromDir)
+    for (let i = 0; i < filenameList.length; i++) {
+        let filename = filenameList[i]
+        let fromUrl = path.join(currentFromDir, filename)
+        let stat = fs.statSync(fromUrl)
+        if (stat.isDirectory()) {
+            let cloneOP = JSON.parse(JSON.stringify(op))
+            cloneOP.currentDir = path.join(op.currentDir, filename)
+
+            await moveDir(fromDir, toDir, cloneOP)
+            continue
+        }
+        let toUrl = path.join(currentToDir, filename)
+        if (op.moveBeforeCB) {
+            op.moveBeforeCB(fromUrl, toUrl)
+        }
+        let isMove = false
+        if (stat.isFile() && (op.isForeOver || !fs.existsSync(toUrl))) {
+            isMove = true
+            await moveFile(fromUrl, toUrl)
+        }
+        if (op.moveAfterCB) {
+            op.moveAfterCB(fromUrl, toUrl, isMove)
+        }
+    }
+    if (op.moveDirCB) {
+        op.moveDirCB(currentFromDir)
+    }
+    return
+}
+
 
 type collectType = {
     isKey: boolean,
@@ -148,7 +195,7 @@ let matchConfigFunc = (collectData: collectType[], baseDir?: string, childConfig
     return { exMap, baseDir, childConfig }
 }
 
-/** 获取文件夹名大法 */
+/** 获取需要生成的文件夹名大法 */
 let getDirFunc = (collectData: collectType[], childConfig: configType_child, exMap: string[]) => {
     let dir: string
     for (let i = 0; i < collectData.length; i++) {
@@ -158,8 +205,9 @@ let getDirFunc = (collectData: collectType[], childConfig: configType_child, exM
             if (childConfig.forceMap && childConfig.forceMap.map(c => c.toUpperCase()).includes(exMap[j])) {
                 continue
             }
-            let reg = new RegExp(exMap[j])
+            let reg = new RegExp(`\^${exMap[j]}\$`, "i")
             if (child.isKey && reg.test(child.attr.toUpperCase())) {
+                // console.log(child.attr,exMap[j])
                 isContinue = true
                 break
             }
@@ -216,9 +264,23 @@ let trimDirFunc = async (childConfig?: configType_child, baseDir?: string) => {
                     console.log(`移动文件夹 ${oldDir} -> ${targetDir}`)
                     for (let k = 0; k < childNameList.length; k++) {
                         let fileUrl = path.join(oldDir, childNameList[k])
-                        if (fs.statSync(fileUrl).isFile()) {
-                            await moveFile(fileUrl, path.join(targetDir, childNameList[k]))
+                        let stat = fs.statSync(fileUrl)
+                        let targetFileUrl = path.join(targetDir, childNameList[k])
+                        if (stat.isFile()) {
+                            console.log(`整理移动文件 ${fileUrl} -> ${targetFileUrl}`)
+                            await moveFile(fileUrl, targetFileUrl)
                             // fs.renameSync(fileUrl, path.join(targetDir, childNameList[k]))
+                        }
+                        else if (stat.isDirectory()) {
+                            console.log(`整理移动文件夹 ${fileUrl} -> ${targetFileUrl}`)
+                            await moveDir(fileUrl, targetFileUrl, {
+                                isForeOver: true,
+                                moveDirCB: (fromDir) => {
+                                    if (fs.readdirSync(fromDir).length == 0) {
+                                        fs.rmdirSync(fromDir)
+                                    }
+                                }
+                            })
                         }
                     }
                     console.log(`删除文件夹 ${oldDir}`)
@@ -244,9 +306,7 @@ let mainFunc = async (fileName: string) => {
     console.log(fileName)
     let collectData = splitFunc(fileName)
     let data = matchConfigFunc(collectData)
-    // console.log(collectData)
     let dir = getDirFunc(collectData, data.childConfig, data.exMap)
-    // console.log(dir)
     fs.mkdirSync(data.baseDir, { "recursive": true })
     let nameList = fs.readdirSync(data.baseDir)
     for (let i = 0; i < nameList.length; i++) {
@@ -260,7 +320,22 @@ let mainFunc = async (fileName: string) => {
     fs.mkdirSync(newDir, { "recursive": true })
     let url = path.join(newDir, fileName)
     // fs.renameSync(path.join(targetDir, fileName), url)
-    moveFile(path.join(targetDir, fileName), url)
+    let newUrl = path.join(targetDir, fileName)
+    let stat = fs.statSync(newUrl)
+    if (stat.isDirectory()) {
+        await moveDir(newUrl, url, {
+            isForeOver: true,
+            moveDirCB: (fromDir) => {
+                if (fs.readdirSync(fromDir).length == 0) {
+                    fs.rmdirSync(fromDir)
+                }
+            }
+        })
+    }
+    else if (stat.isFile()) {
+        await moveFile(newUrl, url)
+    }
+    return
 }
 
 (async () => {
@@ -322,9 +397,9 @@ let mainFunc = async (fileName: string) => {
     let fileNameList = fs.readdirSync(targetDir)
     for (let i = 0; i < fileNameList.length; i++) {
         let fileName = fileNameList[i]
-        if (fs.statSync(path.join(targetDir, fileName)).isDirectory()) {
-            continue
-        }
+        // if (fs.statSync(path.join(targetDir, fileName)).isDirectory()) {
+        //     continue
+        // }
         await mainFunc(fileName)
     }
 
@@ -345,5 +420,6 @@ let mainFunc = async (fileName: string) => {
         await trimDirFunc()
     }
     console.log("打完收工!")
+    return
 })()
 
