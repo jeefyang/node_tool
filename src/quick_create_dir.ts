@@ -1,3 +1,5 @@
+/** 快速批量创建文件夹 */
+
 import * as fs from "fs"
 import * as path from "path"
 

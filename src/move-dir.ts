@@ -1,3 +1,5 @@
+/** 主要用于移动整体文件夹 */
+
 import * as fs from "fs"
 import * as path from "path"
 import * as readline from "readline"
@@ -64,11 +66,13 @@ async function moveFile(fromUrl: string, toUrl: string) {
 async function moveDir(fromDir: string, toDir: string, op: {
     /** 初始的时候不应该存在 */
     currentDir?: string
-    moveBeforeCB?: (fromUrl: string, toUrl: string) => void
-    moveAfterCB?: (fromUrl: string, toUrl: string, isMove: boolean) => void
-    moveDirCB?: (fromDir: string) => void
+
     /** 是否强制覆盖 */
     isForeOver?: boolean
+}, cb: {
+    moveBeforeCB?: (fromUrl: string, toUrl: string) => Promise<any> | void
+    moveAfterCB?: (fromUrl: string, toUrl: string, isMove: boolean) => Promise<any> | void
+    moveDirCB?: (fromDir: string) => Promise<any> | void
 }) {
     if (!op.currentDir) {
         op.currentDir = "./"
@@ -84,24 +88,25 @@ async function moveDir(fromDir: string, toDir: string, op: {
         if (stat.isDirectory()) {
             let cloneOP = JSON.parse(JSON.stringify(op))
             cloneOP.currentDir = path.join(op.currentDir, filename)
-            await moveDir(fromDir, toDir, cloneOP)
+            // console.log(fromDir,cloneOP.currentDir)
+            await moveDir(fromDir, toDir, cloneOP, cb)
             continue
         }
         let toUrl = path.join(currentToDir, filename)
-        if (op.moveBeforeCB) {
-            op.moveBeforeCB(fromUrl, toUrl)
+        if (cb.moveBeforeCB) {
+            await cb.moveBeforeCB(fromUrl, toUrl)
         }
         let isMove = false
         if (stat.isFile() && (op.isForeOver || !fs.existsSync(toUrl))) {
             isMove = true
             await moveFile(fromUrl, toUrl)
         }
-        if (op.moveAfterCB) {
-            op.moveAfterCB(fromUrl, toUrl, isMove)
+        if (cb.moveAfterCB) {
+            await cb.moveAfterCB(fromUrl, toUrl, isMove)
         }
     }
-    if (op.moveDirCB) {
-        op.moveDirCB(currentFromDir)
+    if (cb.moveDirCB) {
+        await cb.moveDirCB(currentFromDir)
     }
     return
 }
@@ -163,6 +168,8 @@ async function moveDir(fromDir: string, toDir: string, op: {
     }
     await moveDir(fromDir, toDir, {
         isForeOver: isForceOver,
+
+    }, {
         moveBeforeCB: (fromUrl, toUrl) => {
             console.log(`正在移动文件 ${fromUrl} -> ${toUrl}`)
         },
@@ -180,7 +187,7 @@ async function moveDir(fromDir: string, toDir: string, op: {
             else {
                 console.log(`从路径文件夹 ${fromUrl} 不为空,暂不删除`)
             }
-        },
+        }
     })
     console.log("打完收工!")
 })()

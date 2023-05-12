@@ -1,3 +1,6 @@
+/** 抽丝剥茧将文件夹的所有文件,整合到另外的文件夹 */
+
+
 import * as fs from "fs"
 import * as path from "path"
 
