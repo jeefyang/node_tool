@@ -1,4 +1,5 @@
 "use strict";
+/** 快速批量创建文件夹 */
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = require("fs");
 const path = require("path");

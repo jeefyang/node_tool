@@ -104,3 +104,6 @@ dist
 # TernJS port file
 .tern-port
 /split_file.jsonc
+/*.ts
+/*.mkv
+/*.ass

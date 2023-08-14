@@ -21,6 +21,8 @@ type configType_child = {
     targetDir?: string
     /** 输出的文件夹,仅限顶端有效 */
     outDir?: string
+    /** 目标map,用于强制快速定位 */
+    targetMap?: string
     /** 强制关键字,解决map和exMap冲突的问题 */
     forceMap?: string[]
     /** 包含就匹配,要保持唯一性 */
@@ -37,6 +39,8 @@ let targetDir = "./"
 let outDir = "./"
 /** 配置 */
 let config: configType_child = {}
+/** 目标map,用于强制快速定位 */
+let targetMap: string = undefined
 
 /** 读取命令行对象 */
 let rl = readline.createInterface({
@@ -183,19 +187,18 @@ let matchConfigFunc = (collectData: collectType[], baseDir?: string, childConfig
     }
     let cacheMap = [...childConfig?.map || [], ...childConfig?.forceMap || []]
     exMap.push(...cacheMap.map(c => c.toUpperCase()))
-    if (!childConfig.children || childConfig.children.length == 0) {
-        return { exMap, baseDir, childConfig }
-    }
-    for (let i = 0; i < childConfig.children.length; i++) {
-        let child = childConfig.children[i]
+    let children = childConfig.children || []
+    for (let i = 0; i < children.length; i++) {
+        let child = children[i]
         for (let j = 0; j < collectData.length; j++) {
-            if (!collectData[j].isKey) {
+            let map = [...child?.map || []]
+            let checkTargetMap = targetMap && map.includes(targetMap)
+            if (!checkTargetMap && !collectData[j].isKey) {
                 continue
             }
-            let map = [...child?.map || []]
             map.push(...child?.forceMap || [])
             map = map.map(c => c.toUpperCase())
-            if (map.includes(collectData[j].attr.toUpperCase())) {
+            if (map.includes(collectData[j].attr.toUpperCase()) || checkTargetMap) {
                 exMap.push(...child.exMap || [])
                 return matchConfigFunc(collectData, baseDir, child, exMap)
             }
@@ -383,6 +386,12 @@ let mainFunc = async (fileName: string) => {
     // fs.renameSync(path.join(targetDir, fileName), url)
     let newUrl = path.join(targetDir, fileName)
     let stat = fs.statSync(newUrl)
+
+    //调试
+    // console.log(newUrl)
+    // return
+
+    //移动文件/文件夹
     if (stat.isDirectory()) {
         await moveDir(newUrl, url, {
             isForeOver: true,
@@ -410,6 +419,7 @@ let mainFunc = async (fileName: string) => {
         config = eval(`(${str})`)
         targetDir = config.targetDir || targetDir
         outDir = config.outDir || outDir
+        targetMap = config.targetMap
     }
 
     // 询问修改目标搜索的文件夹
